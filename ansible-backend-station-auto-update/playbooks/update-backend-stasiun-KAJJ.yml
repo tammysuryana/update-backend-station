@@ -1,0 +1,89 @@
+---
+- name: Git Pull & Update Backend Project Aman + Log Update
+  hosts: node-exporter
+  become: yes
+  vars:
+    project_path: /home/viaeight/viaeight/backend_local_station_kai
+    branch_name: development
+    safe_env_file: ".env"
+    user_name: viaeight
+    log_file: "/home/viaeight/viaeight/tammyupdateAnsible.txt"
+
+  tasks:
+
+    - name: Pastikan folder project ada
+      file:
+        path: "{{ project_path }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+      register: folder_check
+
+    - name: Cek keberadaan .env
+      stat:
+        path: "{{ project_path }}/{{ safe_env_file }}"
+      register: env_file
+
+    - name: Abort jika .env hilang
+      fail:
+        msg: ".env tidak ditemukan! Cancel semua operasi untuk menjaga konfigurasi."
+      when: not env_file.stat.exists
+
+    - name: Pastikan berada di branch development
+      command: git checkout "{{ branch_name }}"
+      args:
+        chdir: "{{ project_path }}"
+      become_user: "{{ user_name }}"
+      register: git_checkout
+      ignore_errors: yes
+
+    - name: Git pull dari remote
+      command: git pull origin "{{ branch_name }}"
+      args:
+        chdir: "{{ project_path }}"
+      become_user: "{{ user_name }}"
+      register: git_pull
+      ignore_errors: yes
+
+    - name: Install dependencies jika yarn tersedia
+      shell: |
+        if command -v yarn >/dev/null 2>&1; then
+          yarn
+        else
+          echo "SKIPPED"
+        fi
+      args:
+        chdir: "{{ project_path }}"
+      become_user: "{{ user_name }}"
+      register: yarn_result
+
+    - name: Restart semua PM2 process jika pm2 tersedia
+      shell: |
+        if command -v pm2 >/dev/null 2>&1; then
+          pm2 restart all
+          pm2 save
+        else
+          echo "SKIPPED"
+        fi
+      become_user: "{{ user_name }}"
+      register: pm2_result
+
+    - name: Buat file tammyupdateAnsible.txt dengan status lengkap
+      copy:
+        dest: "{{ log_file }}"
+        content: |
+          === Update Backend Project Aman ===
+          Time: {{ lookup('pipe','date +"%Y-%m-%d %H:%M:%S"') }}
+          Folder project: {{ 'OK' if folder_check.changed or folder_check.state == 'directory' else 'FAILED' }}
+          .env file: {{ 'OK' if env_file.stat.exists else 'MISSING' }}
+          Git checkout '{{ branch_name }}': {{ 'OK' if git_checkout.rc == 0 else 'FAILED' }}
+          Git pull: {{ 'OK' if git_pull.rc == 0 else 'FAILED' }}
+          Yarn: {{ 'OK' if yarn_result.rc == 0 else 'SKIPPED/FAILED' }}
+          PM2 restart/save: {{ 'OK' if pm2_result.rc == 0 else 'SKIPPED/FAILED' }}
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: '0644'
+
+    - name: Tampilkan pesan sukses
+      debug:
+        msg: "🎉 Git pull, yarn (jika ada), PM2 restart, dan log update selesai di {{ log_file }}"

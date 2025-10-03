@@ -1,0 +1,7 @@
+[node-exporter]
+100.96.0.38 ansible_port=9393
+
+[all:vars]
+ansible_user=viaeight
+ansible_ssh_pass=@Viaeight2023
+ansible_become_pass=@Viaeight2023

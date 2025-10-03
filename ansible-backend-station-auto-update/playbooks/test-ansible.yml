@@ -1,0 +1,17 @@
+---
+- name: Test Ansible Sederhana - Bikin File
+  hosts: node-exporter
+  become: yes
+  
+  tasks:
+    - name: Buat file BElajarAnsible.txt
+      copy:
+        content: "Ciluk ba.... ga ada pengamanan yang paling aman"
+        dest: /home/viaeight/viaeight/BElajarAnsible.txt
+        owner: viaeight
+        group: viaeight
+        mode: '0644'
+    
+    - name: Tampilkan pesan sukses
+      debug:
+        msg: "File berhasil dibuat di /home/viaeight/viaeight/BElajarAnsible.txt"
