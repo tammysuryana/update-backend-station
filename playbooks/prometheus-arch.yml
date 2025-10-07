@@ -1,0 +1,190 @@
+- hosts: prometheus
+  become: true
+  vars:
+    prometheus_version: "3.5.0"
+    packages:
+      download_url: https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz
+      package_name: prometheus-3.5.0.linux-amd64.tar.gz
+      checksum: "sha256:e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a"
+    temp_dir: /tmp
+    config_dir: /etc/prometheus
+    data_dir: /var/lib/prometheus
+    extracted_dir: "{{ temp_dir }}/prometheus-{{ prometheus_version }}.linux-amd64"
+
+  tasks:
+    # CachyOS uses /etc/hosts directly, no cloud-init templates
+    - name: Add entries to /etc/hosts
+      blockinfile:
+        path: /etc/hosts
+        block: |
+          # The following lines are using for KES Server
+          100.82.36.47 Gambir-station
+          100.103.185.8 Palmerah-station
+          100.121.171.72 Bogor-Station
+          100.119.217.113 Tebet-Station
+          100.122.254.107 Sudirman-station
+          
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - KES Server"
+
+    - name: Check if download already exists
+      stat:
+        path: "{{ temp_dir }}/{{ packages.package_name }}"
+        checksum_algorithm: sha256
+      register: existing_download
+
+    - name: Download Prometheus v{{ prometheus_version }}
+      get_url:
+        url: "{{ packages.download_url }}"
+        dest: "{{ temp_dir }}/{{ packages.package_name }}"
+        mode: '0644'
+        checksum: "{{ packages.checksum }}"
+        timeout: 600
+      register: download_result
+      retries: 3
+      delay: 5
+      until: download_result is succeeded
+      when: not existing_download.stat.exists or existing_download.stat.checksum != "e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a"
+
+    - name: Verify downloaded file
+      stat:
+        path: "{{ temp_dir }}/{{ packages.package_name }}"
+      register: downloaded_file
+
+    - name: Check if file is valid
+      fail:
+        msg: "Downloaded file is too small or corrupt (expected ~115MB)"
+      when: downloaded_file.stat.size < 100000000
+
+    - name: Extract Prometheus v{{ prometheus_version }}
+      unarchive:
+        src: "{{ temp_dir }}/{{ packages.package_name }}"
+        dest: "{{ temp_dir }}"
+        remote_src: yes
+        creates: "{{ extracted_dir }}"
+
+    - name: Create prometheus group
+      group:
+        name: prometheus
+        state: present
+        system: yes
+
+    - name: Check if prometheus user exists
+      command: id prometheus
+      register: user_exists
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Create prometheus user
+      user:
+        name: prometheus
+        group: prometheus
+        shell: /usr/bin/nologin
+        system: yes
+        createhome: no
+        comment: "Prometheus monitoring system"
+      register: user_result
+      retries: 5
+      delay: 2
+      until: user_result is succeeded
+      when: user_exists.rc != 0
+
+    - name: Create Config Directory
+      file:
+        path: "{{ config_dir }}"
+        state: directory
+        owner: root
+        group: prometheus
+        mode: '0755'
+
+    - name: Create Data Directory
+      file:
+        path: "{{ data_dir }}"
+        owner: prometheus
+        group: prometheus
+        state: directory
+        mode: '0755'
+
+    - name: Copy Prometheus Binary Files
+      copy:
+        src: "{{ item }}"
+        dest: /usr/local/bin
+        owner: root
+        mode: "0755"
+        group: root
+        remote_src: yes
+      with_items:
+        - "{{ extracted_dir }}/prometheus"
+        - "{{ extracted_dir }}/promtool"
+
+    - name: Check if console files exist in extracted archive
+      stat:
+        path: "{{ extracted_dir }}/consoles"
+      register: consoles_exist
+
+    - name: Copy Prometheus Console Files (if exist)
+      copy:
+        src: "{{ item }}"
+        dest: "{{ config_dir }}"
+        owner: root
+        group: prometheus
+        mode: '0755'
+        remote_src: yes
+      loop:
+        - "{{ extracted_dir }}/consoles"
+        - "{{ extracted_dir }}/console_libraries"
+      when: consoles_exist.stat.exists
+
+    - name: Create empty console directories (Prometheus 3.x compatibility)
+      file:
+        path: "{{ config_dir }}/{{ item }}"
+        state: directory
+        owner: root
+        group: prometheus
+        mode: '0755'
+      loop:
+        - consoles
+        - console_libraries
+      when: not consoles_exist.stat.exists
+
+    - name: Copy Prometheus Config File
+      copy:
+        src: ../config/prometheus/prometheus.yml
+        dest: "{{ config_dir }}"
+        owner: root
+        group: prometheus
+        mode: '0644'
+      notify: Restart Prometheus
+
+    - name: Create Prometheus Service
+      copy:
+        src: ../config/systemd/prometheus.service
+        dest: /etc/systemd/system
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable and Start Prometheus Service
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Clean Temporary Directory
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "{{ extracted_dir }}"
+        - "{{ temp_dir }}/{{ packages.package_name }}"
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart Prometheus
+      systemd:
+        name: prometheus
+        state: restarted

@@ -1,0 +1,17 @@
+---
+- name: Test Ansible Sederhana - Bikin File
+  hosts: node-exporter
+  become: yes
+  
+  tasks:
+    - name: Buat file BElajarAnsible.txt
+      copy:
+        content: "Ciluk ba.... ga ada pengamanan yang paling aman"
+        dest: /home/gambir/BElajarAnsible.txt
+        owner: gambir
+        group: gambir
+        mode: '0644'
+    
+    - name: Tampilkan pesan sukses
+      debug:
+        msg: "File berhasil dibuat di /home/gambir/BElajarAnsible.txt"

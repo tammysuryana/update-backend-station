@@ -1,0 +1,13 @@
+[prometheus]
+#localhost ansible_connection=local ansible_become=no
+100.68.199.102 ansible_user=vatech ansible_ssh_pass=@Vatech2025 ansible_become_pass=@Vatech2025
+[node-exporter]
+100.122.254.107 ansible_port=9393 ansible_user=viaeight ansible_ssh_pass=@Viaeight2023 ansible_become_pass=@Viaeight2023
+100.82.36.47 ansible_user=gambir ansible_ssh_pass=@Viatech2025 ansible_become_pass=@Viatech2025
+100.103.185.8 ansible_port=9393 ansible_user=viaeight ansible_ssh_pass=@Viaeight2023 ansible_become_pass=@Viaeight2023
+100.121.171.72 ansible_port=9393 ansible_user=stasiunbogor ansible_ssh_pass=@Viaeight2023 ansible_become_pass=@Viaeight2023
+100.119.217.113 ansible_port=9393 ansible_user=viaeight ansible_ssh_pass=@Viaeight2023 ansible_become_pass=@Viaeight2023
+[all:vars]
+ansible_user=viaeight
+ansible_ssh_pass=@Viaeight2023
+ansible_become_pass=@Viaeight2023

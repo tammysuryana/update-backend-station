@@ -1,0 +1,46 @@
+- hosts: prometheus
+  become: yes
+  
+  tasks:
+    - name: Install Grafana fresh
+      package:
+        name: grafana
+        state: present
+
+    - name: Create grafana config directory
+      file:
+        path: /etc/grafana
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: 0755
+
+    - name: Create grafana config file
+      copy:
+        content: |
+          [server]
+          protocol = http
+          http_addr = 0.0.0.0
+          http_port = 3000
+
+          [security]
+          admin_user = admin
+          admin_password = admin
+
+          [log]
+          mode = console
+          level = info
+        dest: /etc/grafana/grafana.ini
+        owner: grafana
+        group: grafana
+        mode: 0644
+
+    - name: Start Grafana service
+      systemd:
+        name: grafana
+        state: started
+        enabled: yes
+
+    - name: Wait for Grafana
+      pause:
+        seconds: 10

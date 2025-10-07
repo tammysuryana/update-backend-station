@@ -1,0 +1,139 @@
+---
+# playbook: playbooks/install_grafana_ubuntu24.yml
+# Purpose: Install Grafana OSS on Ubuntu 24.04 using official APT repository.
+# Usage: ansible-playbook -i inventory playbooks/install_grafana_ubuntu24.yml --ask-become-pass
+
+- name: Install Grafana OSS on Ubuntu 24.04 (APT repo)
+  hosts: prometheus
+  become: true
+  gather_facts: true
+  vars:
+    # Default version (update if you want to pin a different release)
+    grafana_version: "12.2.0"
+    grafana_pkg_name: "grafana={{ grafana_version }}"
+    grafana_repo: "deb https://packages.grafana.com/oss/deb stable main"
+    grafana_gpg_url: "https://packages.grafana.com/gpg.key"
+
+    # Paths / config
+    grafana_config_dir: /etc/grafana
+    grafana_provisioning_dir: "{{ grafana_config_dir }}/provisioning/datasources"
+    prometheus_url: "http://localhost:9090"   # change if Prometheus remote
+
+    # Optional: If you prefer package without pinning version, set grafana_pkg_name: grafana
+    # grafana_pkg_name: "grafana"
+
+  tasks:
+
+    - name: Ensure apt cache is up to date
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites (apt transport + fonts)
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - adduser
+          - libfontconfig1
+          - wget
+        state: present
+        update_cache: no
+
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: "{{ grafana_gpg_url }}"
+        dest: /tmp/grafana_gpg.key
+        mode: '0644'
+        force: yes
+
+    - name: Add Grafana GPG key
+      ansible.builtin.apt_key:
+        file: /tmp/grafana_gpg.key
+        state: present
+
+    - name: Add Grafana apt repository
+      ansible.builtin.apt_repository:
+        repo: "{{ grafana_repo }}"
+        state: present
+        filename: grafana
+
+    - name: Update apt cache after adding grafana repo
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Grafana package (pinned to grafana_version)
+      ansible.builtin.apt:
+        name: "{{ grafana_pkg_name }}"
+        state: present
+      register: grafana_install_result
+
+    - name: Ensure Grafana config directory exists
+      ansible.builtin.file:
+        path: "{{ grafana_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure provisioning datasources directory exists
+      ansible.builtin.file:
+        path: "{{ grafana_provisioning_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Provision Prometheus datasource (file)
+      ansible.builtin.copy:
+        dest: "{{ grafana_provisioning_dir }}/prometheus.yml"
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: "{{ prometheus_url }}"
+              isDefault: true
+              editable: true
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart grafana
+
+    - name: Ensure grafana service is enabled and started
+      ansible.builtin.systemd:
+        name: grafana-server.service
+        enabled: true
+        state: started
+        daemon_reload: yes
+
+    - name: Wait for Grafana HTTP port 3000 to be available
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 3000
+        timeout: 30
+        state: started
+
+    - name: Optional - open UFW port 3000 (if ufw is used)
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+      become: true
+
+    - name: Ensure UFW allows 3000/tcp (if ufw active)
+      ansible.builtin.command: ufw allow 3000/tcp
+      when: >
+        (ansible_facts['pkg_mgr'] == 'apt') and
+        (ansible_facts['distribution'] is defined) and
+        (ansible_facts['distribution'] | lower == 'ubuntu')
+      changed_when: false
+      failed_when: false
+      ignore_errors: true
+
+  handlers:
+    - name: Restart grafana
+      ansible.builtin.systemd:
+        name: grafana-server.service
+        state: restarted
+        daemon_reload: yes

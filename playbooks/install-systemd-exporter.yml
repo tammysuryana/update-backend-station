@@ -1,0 +1,69 @@
+---
+- name: Install systemd_exporter on all nodes
+  hosts: node-exporter
+  become: true
+  vars:
+    exporter_version: 0.6.0
+    download_url: "https://github.com/prometheus-community/systemd_exporter/releases/download/v{{ exporter_version }}/systemd_exporter-{{ exporter_version }}.linux-amd64.tar.gz"
+    temp_dir: /tmp
+    binary_name: systemd_exporter
+
+  tasks:
+    - name: Download systemd_exporter
+      get_url:
+        url: "{{ download_url }}"
+        dest: "{{ temp_dir }}/systemd_exporter.tar.gz"
+
+    - name: Extract systemd_exporter
+      unarchive:
+        src: "{{ temp_dir }}/systemd_exporter.tar.gz"
+        dest: "{{ temp_dir }}"
+        remote_src: yes
+
+    - name: Create prometheus group
+      group:
+        name: prometheus
+        state: present
+
+    - name: Create prometheus user
+      user:
+        name: prometheus
+        group: prometheus
+        shell: /sbin/nologin
+        system: yes
+        createhome: no
+
+    - name: Copy systemd_exporter binary to /usr/local/bin
+      copy:
+        src: "{{ temp_dir }}/systemd_exporter-{{ exporter_version }}.linux-amd64/{{ binary_name }}"
+        dest: /usr/local/bin/{{ binary_name }}
+        owner: root
+        group: root
+        mode: '0755'
+        remote_src: yes
+
+    - name: Install systemd service file
+      copy:
+        src: ../config/systemd/systemd-exporter.service
+        dest: /etc/systemd/system/systemd-exporter.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start systemd_exporter
+      systemd:
+        name: systemd-exporter
+        state: started
+        enabled: yes
+
+    - name: Cleanup temp files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ temp_dir }}/systemd_exporter.tar.gz"
+        - "{{ temp_dir }}/systemd_exporter-{{ exporter_version }}.linux-amd64"

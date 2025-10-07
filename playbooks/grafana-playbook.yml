@@ -1,0 +1,127 @@
+- hosts: prometheus
+  become: true
+  vars:
+    grafana_version: 10.4.2
+    install_dir: /usr/local/bin
+    config_dir: /etc/grafana
+    data_dir: /var/lib/grafana
+    log_dir: /var/log/grafana
+    
+  tasks:
+    - name: Install prerequisites
+      apt:
+        name: 
+          - adduser
+          - libfontconfig1
+        state: present
+        update_cache: yes
+
+    - name: Download Grafana
+      get_url:
+        url: https://dl.grafana.com/oss/release/grafana-{{ grafana_version }}.linux-amd64.tar.gz
+        dest: /tmp/grafana-{{ grafana_version }}.linux-amd64.tar.gz
+
+    - name: Extract Grafana
+      unarchive:
+        src: /tmp/grafana-{{ grafana_version }}.linux-amd64.tar.gz
+        dest: /tmp
+        remote_src: yes
+
+    - name: Create grafana group
+      group:
+        name: grafana
+        state: present
+
+    - name: Create grafana user
+      user:
+        name: grafana
+        group: grafana
+        shell: /sbin/nologin
+        system: yes
+        createhome: no
+
+    - name: Create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: 0755
+      with_items:
+        - "{{ config_dir }}"
+        - "{{ data_dir }}"
+        - "{{ log_dir }}"
+        - "{{ config_dir }}/provisioning/datasources"
+
+    - name: Copy Grafana binary
+      copy:
+        src: "/tmp/grafana-{{ grafana_version }}/bin/grafana-server"
+        dest: "{{ install_dir }}/grafana-server"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: yes
+
+    - name: Copy Grafana configuration
+      copy:
+        src: "/tmp/grafana-{{ grafana_version }}/conf/defaults.ini"
+        dest: "{{ config_dir }}/grafana.ini"
+        owner: grafana
+        group: grafana
+        mode: "0644"
+        remote_src: yes
+
+    - name: Configure Grafana datasource
+      copy:
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              url: http://localhost:9090
+              access: proxy
+              isDefault: true
+        dest: "{{ config_dir }}/provisioning/datasources/prometheus.yml"
+        owner: grafana
+        group: grafana
+        mode: 0644
+
+    - name: Create Grafana systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=Grafana
+          Documentation=https://grafana.com/docs/grafana/latest/
+          Wants=network-online.target
+          After=network-online.target prometheus.service
+
+          [Service]
+          User=grafana
+          Group=grafana
+          Type=simple
+          ExecStart={{ install_dir }}/grafana-server \
+            --config {{ config_dir }}/grafana.ini \
+            --homepath /tmp/grafana-{{ grafana_version }} \
+            --packaging=tar \
+            cfg:default.paths.data={{ data_dir }} \
+            cfg:default.paths.logs={{ log_dir }}
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/grafana-server.service
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Start and enable Grafana service
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: yes
+
+    - name: Cleanup temporary files
+      file:
+        path: "/tmp/grafana-{{ grafana_version }}"
+        state: absent
+      ignore_errors: yes

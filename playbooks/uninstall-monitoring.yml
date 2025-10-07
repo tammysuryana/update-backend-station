@@ -1,0 +1,95 @@
+- hosts: prometheus
+  become: true
+  
+  tasks:
+    # HAPUS GRAFANA
+    - name: Stop and disable Grafana service
+      systemd:
+        name: grafana-server
+        state: stopped
+        enabled: no
+
+    - name: Remove Grafana service file
+      file:
+        path: /etc/systemd/system/grafana-server.service
+        state: absent
+
+    - name: Remove Grafana binary
+      file:
+        path: /usr/local/bin/grafana-server
+        state: absent
+
+    - name: Remove Grafana directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/grafana
+        - /var/lib/grafana
+        - /var/log/grafana
+
+    - name: Remove Grafana user and group
+      user:
+        name: grafana
+        state: absent
+        remove: yes
+
+    - name: Remove Grafana group
+      group:
+        name: grafana
+        state: absent
+
+    # HAPUS PROMETHEUS
+    - name: Stop and disable Prometheus service
+      systemd:
+        name: prometheus
+        state: stopped
+        enabled: no
+
+    - name: Remove Prometheus service file
+      file:
+        path: /etc/systemd/system/prometheus.service
+        state: absent
+
+    - name: Remove Prometheus binaries
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /usr/local/bin/prometheus
+        - /usr/local/bin/promtool
+
+    - name: Remove Prometheus directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/prometheus
+        - /var/lib/prometheus
+
+    - name: Remove Prometheus user and group
+      user:
+        name: prometheus
+        state: absent
+        remove: yes
+
+    - name: Remove Prometheus group
+      group:
+        name: prometheus
+        state: absent
+
+    - name: Clean up temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/prometheus-*
+        - /tmp/grafana-*
+
+    - name: Remove repository files (Grafana)
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/apt/sources.list.d/grafana.list
+        - /etc/apt/trusted.gpg.d/grafana.gpg

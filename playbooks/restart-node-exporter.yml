@@ -1,0 +1,14 @@
+---
+- name: Restart Node Exporter di semua host
+  hosts: node-exporter
+  become: true
+  tasks:
+    - name: Reload systemd daemon (jaga-jaga kalau ada update service)
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart node-exporter service
+      systemd:
+        name: node-exporter
+        state: restarted
+        enabled: yes
